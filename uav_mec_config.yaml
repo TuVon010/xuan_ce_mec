@@ -1,0 +1,63 @@
+dl_toolbox: "torch"
+project_name: "UAV_MEC_Project"
+logger: "tensorboard"
+render: False
+fps: 15
+test_mode: False
+device: "cuda:0"  # 如果没有GPU改成 "cpu"
+
+agent: "MADDPG"
+env_name: "UAV_MEC_Env"
+env_id: "uav_mec_v1"
+continuous_action: True
+learner: "MADDPG_Learner"
+policy: "MADDPG_Policy"
+representation: "Basic_MLP"
+vectorize: "DummyVecMultiAgentEnv"
+
+# 自定义环境参数
+n_uavs: 3
+n_users: 10
+map_size: 500.0   # 500m x 500m
+h_uav: 50.0       # 飞行高度 50m
+v_max: 20.0       # 最大速度 20m/s
+max_episode_steps: 100
+env_seed: 1
+
+use_parameter_sharing: True
+# 神经网络参数
+representation_hidden_size: [128, ]
+actor_hidden_size: [128, 64]
+critic_hidden_size: [128, 64]
+activation: "relu"
+activation_action: "tanh" # 对应动作范围 [-1, 1]
+
+seed: 1
+parallels: 10      # 并行环境数
+buffer_size: 10000
+batch_size: 256
+learning_rate_actor: 0.001
+learning_rate_critic: 0.001
+gamma: 0.95
+tau: 0.01
+# [新增] 探索噪声参数 (必须添加)
+start_noise: 0.05          # 训练开始时的噪声标准差
+end_noise: 0.001            # 训练结束时的噪声标准差 (如果想恒定噪声，就设为一样)
+sigma: 0.1                # 基础噪声系数
+running_steps: 100000
+eval_interval: 2000
+test_episode: 5
+# --- 分布式与路径 ---
+distributed_training: False
+master_port: '12355'
+parallels: 1
+log_dir: "./logs/uav_mec/"
+model_dir: "./models/uav_mec/"
+
+use_grad_clip: True
+grad_clip_norm: 10.0
+# === 添加这一行 ===
+start_training: 2000  # 存满 2000 条数据后才开始更新网络
+
+# 建议同时也检查一下有没有 training_frequency，如果没有也加上
+training_frequency: 1 # 每走一步训练一次

@@ -80,6 +80,11 @@ use_grad_clip: True
 clip_type: 1
 grad_clip_norm: 10.0
 
+# === 添加这一行 ===
+start_training: 2000  # 存满 2000 条数据后才开始更新网络
+
+# 建议同时也检查一下有没有 training_frequency，如果没有也加上
+training_frequency: 1 # 每走一步训练一次
 # 学习率衰减
 use_linear_lr_decay: True
 end_factor_lr_decay: 0.1
