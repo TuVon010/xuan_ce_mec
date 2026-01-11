@@ -17,6 +17,11 @@ class MedicalMECEnv(RawMultiAgentEnv):
         self.map_size = env_config.get("map_size", 1000.0)
         self.max_episode_steps = env_config.get("max_episode_steps", 200)
         self.fig_save_path = env_config.get("log_dir", "./results")
+        # --- [新增] 论文 Eq. 24-30 的系统参数 ---
+        self.alpha_H = 10.0      # Eq.24 高优先级效用系数
+        self.Phi_H = 20.0        # Eq.24 高优先级失败惩罚
+        self.Phi_L = 10.0        # Eq.25 低优先级完成奖励
+        self.mu_decay = 0.5      # Eq.25 低优先级衰减系数
         
         # --- 1. 智能体定义 ---
         self.num_agents = self.n_users
@@ -152,8 +157,8 @@ class MedicalMECEnv(RawMultiAgentEnv):
             prev = self.uav_trace[m][-2] if len(self.uav_trace[m]) > 1 else self.uav_pos[m]
             total_fly += self._calc_fly_energy(self.uav_pos[m], prev)
             
-        total_comp = sum(m['energy'] for m in step_metrics)
-        
+        #total_comp = sum(m['energy'] for m in step_metrics)
+        total_comp = sum(m['comp_energy'] for m in step_metrics)
         # 5. 计算奖励 (归一化)
         norm_gain = (total_utility / self.norm_gain) - self.w_energy * ((total_fly / self.norm_e_fly) + (total_comp / self.norm_e_comp))
         
@@ -236,16 +241,37 @@ class MedicalMECEnv(RawMultiAgentEnv):
             obs_dict[self.agents[u]] = feat.astype(np.float32)
         return obs_dict
 
+    # def _generate_tasks(self):
+    #     self.user_tasks = []
+    #     for i in range(self.n_users):
+    #         is_high = np.random.rand() < 0.3
+    #         self.user_tasks.append({
+    #             'D': np.random.uniform(0.5e6, 2.0e6), # 数据量
+    #             'C': np.random.uniform(0.5e9, 2.0e9), # 计算量
+    #             'tau': 1.0 if is_high else 3.0,       # 延迟约束
+    #             'o': 1 if is_high else 0              # 优先级
+    #         })
     def _generate_tasks(self):
-        self.user_tasks = []
+        self.user_tasks = [None] * self.n_users
+        
+        # 1. 设定固定比例，例如 30%
+        ratio_high = 0.3
+        num_high = int(self.n_users * ratio_high)
+        
+        # 2. 创建一个优先级列表：前 num_high 个为 1，其余为 0
+        priorities = [1] * num_high + [0] * (self.n_users - num_high)
+        
+        # 3. 随机打乱优先级分配，确保位置随机但总数固定
+        np.random.shuffle(priorities)
+        
         for i in range(self.n_users):
-            is_high = np.random.rand() < 0.3
-            self.user_tasks.append({
+            is_high = (priorities[i] == 1)
+            self.user_tasks[i] = {
                 'D': np.random.uniform(0.5e6, 2.0e6), # 数据量
                 'C': np.random.uniform(0.5e9, 2.0e9), # 计算量
                 'tau': 1.0 if is_high else 3.0,       # 延迟约束
                 'o': 1 if is_high else 0              # 优先级
-            })
+            }
     
     def _allocate_resources_logic(self, association):
         f_allocs = {}
@@ -279,7 +305,7 @@ class MedicalMECEnv(RawMultiAgentEnv):
                     move = move / np.linalg.norm(move) * self.V_max * self.delta_t
                 self.uav_pos[m] = np.clip(self.uav_pos[m] + move, 0, self.map_size)
 
-    def _calculate_metrics(self, association, local_users, gec_users, f_allocs):
+    def _calculate_metrics0(self, association, local_users, gec_users, f_allocs):
         metrics = []
         gec_pos = np.array([self.map_size/2, self.map_size/2])
         for u in range(self.n_users):
@@ -313,6 +339,79 @@ class MedicalMECEnv(RawMultiAgentEnv):
             metrics.append({'utility': utility, 'energy': energy, 'delay': delay})
         return metrics
 
+    def _calculate_metrics(self, association, local_users, gec_users, f_allocs):
+        metrics = []
+        gec_pos = np.array([self.map_size/2, self.map_size/2])
+        
+        for u in range(self.n_users):
+            task = self.user_tasks[u]
+            delay = 0.0
+            energy_step = 0.0 # 用户侧的能耗 (传输能耗)
+            
+            # 1. 计算时延 (T_eff) 和 用户能耗
+            if u in local_users:
+                delay = task['C'] / self.F_local
+                # 本地计算也消耗能量，但这通常不算在 System Gain 的 E_comp 里(看论文具体定义)
+                # 这里假设 Eq.29 的 E_comp 包含所有计算实体的能耗
+                energy_step = self.kappa * self.F_local**2 * task['C'] 
+                
+            elif u in gec_users:
+                dist = np.linalg.norm(self.user_pos[u] - gec_pos)
+                rate = self._calc_rate(dist, False) # 假设 GEC 链路是非视距
+                delay = task['D']/rate + task['C']/self.F_gec
+                energy_step = self.P_tx_user * (task['D']/rate) # 用户传输能耗
+                
+            else: # 卸载给 UAV
+                target_m = -1
+                for m, us in association.items(): 
+                    if u in us: target_m = m; break
+                
+                if target_m != -1 and (target_m, u) in f_allocs:
+                    f_u = f_allocs[(target_m,u)]
+                    dist = np.linalg.norm(self.user_pos[u] - self.uav_pos[target_m])
+                    rate = self._calc_rate(dist, True) # UAV 链路是视距
+                    
+                    trans_delay = task['D'] / rate
+                    comp_delay = task['C'] / f_u
+                    delay = trans_delay + comp_delay
+                    
+                    energy_step = self.P_tx_user * trans_delay # 用户传输能耗
+                    # 注意: UAV 的计算能耗算在 UAV 头上，不加在这里
+                else:
+                    delay = 100.0 # 惩罚值: 未成功关联
+        
+            # 2. 计算效用 (Strictly Eq. 24 & 25)
+            utility = 0.0
+            tau_u = task['tau']
+            
+            # --- High Priority (Eq. 24) ---
+            if task['o'] == 1:
+                if delay <= tau_u:
+                    # Logarithmic utility
+                    # 防止 log(<=0)，加个 max
+                    margin = max(1e-5, 1.0 + tau_u - delay)
+                    utility = self.alpha_H * np.log2(margin)
+                else:
+                    # Failure penalty
+                    utility = -self.Phi_H
+                    
+            # --- Low Priority (Eq. 25) ---
+            else:
+                if delay <= tau_u:
+                    utility = self.Phi_L
+                else:
+                    # Exponential decay
+                    utility = self.Phi_L * np.exp(-self.mu_decay * (delay - tau_u))
+
+            metrics.append({
+                'utility': utility, 
+                'user_energy': energy_step, # 仅用户传输/本地计算能耗
+                'delay': delay,
+                'comp_energy': 0.0 # 稍后在 step 里统计 UAV 的计算能耗
+            })
+            
+        return metrics
+    
     def _calc_rate(self, d, los):
         # 视距(LoS)与非视距(NLoS)路径损耗
         pl = 128.1 + 37.6*np.log10(np.sqrt(d**2+self.H_uav**2)/1000) + (0 if los else 20)

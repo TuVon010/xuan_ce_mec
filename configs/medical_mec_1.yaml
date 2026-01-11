@@ -1,0 +1,93 @@
+   # configs/medical_mec.yaml
+
+# --- 基础/系统设置 ---
+dl_toolbox: "torch"
+project_name: "Medical_MEC"
+logger: "tensorboard"
+test_mode: False
+device: "cuda:0"
+seed: 1
+render: False
+render_mode: 'rgb_array'
+
+# --- 分布式与路径 ---
+distributed_training: False
+master_port: '12355'
+parallels: 1
+log_dir: "./logs/medical_mec/"
+model_dir: "./models/medical_mec/"
+
+# --- 环境参数 ---
+env_name: "MedicalMECEnv"
+env_id: "MedicalMEC-v0"
+vectorize: "DummyVecMultiAgentEnv"
+n_uavs: 4
+n_users: 20
+map_size: 1000.0
+max_episode_steps: 200
+env_seed: 1
+fps: 50                      # 渲染帧率 (如果不画图可忽略)
+
+# --- 算法参数 (MAPPO) ---
+agent: "MAPPO"
+learner: "MAPPO_Clip_Learner"
+policy: "Categorical_MAAC_Policy"
+representation: "Basic_MLP"
+continuous_action: False
+
+# --- 模型结构参数 ---
+use_parameter_sharing: True
+use_actions_mask: False
+use_rnn: False
+rnn: "GRU"
+recurrent_hidden_size: 64
+N_recurrent_layers: 1
+dropout: 0
+normalize: "LayerNorm"
+initialize: "orthogonal"
+gain: 0.01
+
+representation_hidden_size: [128, ]
+actor_hidden_size: [128, 128]
+critic_hidden_size: [128, 128]
+activation: "leaky_relu"
+activation_action: "softmax"
+
+# --- 训练超参数 (核心修复区) ---
+n_episodes: 5000
+buffer_size: 3200
+batch_size: 64
+learning_rate: 0.0005
+gamma: 0.95
+# --- 训练超参数 ---
+# [关键修复] 必须添加 running_steps 用于计算 LR Scheduler
+# 估算公式: n_episodes * max_episode_steps = 1000 * 200 = 200000
+running_steps: 1000000
+weight_decay: 1e-5              # [本次修复] 权重衰减系数
+
+# [关键修复] PPO 特有参数
+n_epochs: 10                  # 每次采集数据后，循环训练 10 轮
+n_minibatch: 50               # 将 buffer 切分为 50 个小批次 (3200/50 = 64)
+
+# 优势估计与裁剪
+use_gae: True
+gae_lambda: 0.95
+clip_range: 0.1
+vf_coef: 0.5
+ent_coef: 0.01
+use_advnorm: True
+use_grad_clip: True
+clip_type: 1
+grad_clip_norm: 10.0
+
+# 学习率衰减
+use_linear_lr_decay: True
+end_factor_lr_decay: 0.1
+
+# 其他 Tricks
+use_global_state: True
+use_value_clip: True
+value_clip_range: 0.1
+use_value_norm: True
+use_huber_loss: True
+huber_delta: 10.0

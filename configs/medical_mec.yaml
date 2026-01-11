@@ -63,7 +63,7 @@ gamma: 0.95
 # [关键修复] 必须添加 running_steps 用于计算 LR Scheduler
 # 估算公式: n_episodes * max_episode_steps = 1000 * 200 = 200000
 running_steps: 1000000
-weight_decay: 1e-5              # [本次修复] 权重衰减系数
+weight_decay: 0              # [本次修复] 权重衰减系数
 
 # [关键修复] PPO 特有参数
 n_epochs: 10                  # 每次采集数据后，循环训练 10 轮
