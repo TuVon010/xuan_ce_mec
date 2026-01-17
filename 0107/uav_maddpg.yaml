@@ -1,0 +1,53 @@
+dl_toolbox: "torch"
+project_name: "UAV_Custom_Env"
+logger: "tensorboard"
+wandb_user_name: ""
+render: False
+render_mode: 'rgb_array'
+fps: 15
+test_mode: False
+device: "cuda:0"
+
+agent: "MADDPG"
+env_name: "UAVMECEnv"  # 这里必须对应注册表里的 Key
+env_id: "uav_v1"
+env_seed: 1
+continuous_action: True
+learner: "MADDPG_Learner"
+policy: "MADDPG_Policy"
+representation: "Basic_MLP"
+vectorize: "DummyVecMultiAgentEnv"
+
+# 关键参数
+use_parameter_sharing: True
+model_keys: ["agent_0"]  # 共享参数时，指定一个主键即可
+
+# 神经网络参数
+representation_hidden_size: [128, 128]
+actor_hidden_size: [128, 64]
+critic_hidden_size: [128, 64]
+activation: "leaky_relu"
+activation_action: "tanh"
+
+seed: 1
+parallels: 1
+buffer_size: 50000
+batch_size: 256
+learning_rate_actor: 0.001
+learning_rate_critic: 0.001
+gamma: 0.95
+tau: 0.01
+
+start_noise: 0.5
+end_noise: 0.01
+training_frequency: 1
+running_steps: 50000
+start_training: 1000
+distributed_training: False
+use_grad_clip: True
+grad_clip_norm: 0.5
+test_steps: 1000
+eval_interval: 2000
+test_episode: 5
+log_dir: "./logs/uav_maddpg/"
+model_dir: "./models/uav_maddpg/"
